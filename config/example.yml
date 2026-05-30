@@ -1,0 +1,103 @@
+# Paper Tracker example config
+# Copy this file and modify it, then run: paper-tracker search --config config/custom.yml
+# For all available options and defaults, see: src/PaperTracker/config/defaults.yml
+
+# Search queries (required - replace with your topics of interest)
+#
+# Full-text OR/NOT: match any OR term, exclude any NOT term
+# Field filters: TITLE / ABSTRACT / AUTHOR / JOURNAL / CATEGORY
+#   each field supports AND / OR / NOT independently
+
+storage:
+  enabled: true
+  content_storage_enabled: true   # save full paper content (default: true)
+  keep_arxiv_version: false       # false: 2601.21922, true: 2601.21922v1
+
+search:
+  sources: [arxiv]            # available: [arxiv, openalex, pubmed]
+                              # pubmed: set NCBI_API_KEY in .env (raises rate limit 3->10 req/s);
+  max_results: 3              # max paper count for each query
+  pull_every: 7               # Strict time window filter[now - <pull_every>, now], unit: day
+  fill_enabled: true          # Allow fill with paper outside the strict time window
+  max_lookback_days: 30       # Max length for fill window, -1 as infinite
+
+queries:
+  - NAME: Deep Learning
+    OR:
+      - deep learning
+      - neural network
+    NOT:
+      - survey
+    CATEGORY:
+      OR:
+        - cs.LG
+        - cs.CV
+
+  - NAME: LLM Research
+    OR:
+      - large language model
+      - LLM
+    NOT:
+      - law             # exclude "LLM" as Master of Laws
+      - legal
+    CATEGORY:
+      OR:
+        - cs.CL
+        - cs.AI
+
+# Output formats (options: console, json, markdown, html)
+output:
+  base_dir: output/
+  formats: [console, markdown, html]      # console, json, markdown, html 
+
+# LLM_API_KEY are required if enabled
+llm:
+  enabled: false
+  enable_translation: false               # Enable abstract translation
+  enable_summary: false                   # Enable paper summary (TLDR, motivation, method, result, conclusion)
+  target_lang: Simplified Chinese
+# OpenAI GPT-4o-mini (recommended for cost):
+  # enabled: true
+  # base_url: https://api.openai.com
+  # model: gpt-4o-mini
+
+# DeepSeek (very cost-effective):
+  # enabled: true
+  # base_url: https://api.deepseek.com
+  # model: deepseek-chat
+
+# DashScope / Qwen OpenAI-compatible API:
+  # enabled: true
+  # api_key_env: LLM_API_KEY
+  # base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  # model: qwen3.5-flash
+
+# SiliconFlow (free tier available):
+  # enabled: true
+  # base_url: https://api.siliconflow.cn
+  # model: Qwen/Qwen2.5-7B-Instruct
+
+rag:
+  models_dir: models
+  embedding_model: BAAI/bge-m3
+  reranker_model: BAAI/bge-reranker-base
+  allow_remote_model_loading: false       # prefer explicit `paper-tracker rag-download-models`
+  hybrid_enabled: true                    # dense vector + SQLite FTS/BM25
+  reranker_enabled: true
+  top_k: 6
+  candidate_k: 24
+  default_mode: standard                  # standard | decompose | agent
+  decompose_enabled: true
+  agent_enabled: false                    # agent-lite is available behind this flag
+  multimodal_enabled: true                # figure assets + caption-based figure retrieval
+  vl_caption_enabled: false               # true: use local Qwen3-VL to enrich extracted figure captions
+  vl_caption_model: Qwen/Qwen3-VL-8B-Instruct
+  vl_caption_model_dir: ""                # optional local base model directory
+  vl_caption_adapter_path: ""             # optional LoRA adapter directory
+  vl_caption_max_figures_per_paper: 8
+  image_vector_enabled: false             # true: build Qwen3-VL image-vector index for extracted figures
+  image_embedding_model: Qwen/Qwen3-VL-Embedding-8B
+  image_embedding_model_dir: ""
+  image_embedding_dim: 4096
+  image_embedding_batch_size: 2
+  image_vector_weight: 0.35

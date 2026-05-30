@@ -1,0 +1,34 @@
+"""Tests for basic query configuration parsing."""
+
+import sys
+import unittest
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from PaperTracker.config import load_config_with_defaults
+
+
+class TestBasicQueryConfig(unittest.TestCase):
+    def test_basic_query_config_parsing(self) -> None:
+        config_path = REPO_ROOT / "config" / "test" / "basic_query.yml"
+
+        cfg = load_config_with_defaults(config_path)
+
+        self.assertEqual(cfg.runtime.level, "INFO")
+        self.assertEqual(cfg.search.max_results, 5)
+        self.assertEqual(cfg.output.formats, ("json",))
+
+        self.assertEqual(len(cfg.search.queries), 1)
+        query = cfg.search.queries[0]
+        self.assertEqual(query.name, "basic")
+        self.assertIn("TEXT", query.fields)
+        text_field = query.fields["TEXT"]
+        self.assertEqual(text_field.OR, ("machine learning", "deep learning"))
+        self.assertEqual(text_field.AND, ("neural network",))
+        self.assertEqual(text_field.NOT, ("survey",))
+
+
+if __name__ == "__main__":
+    unittest.main()

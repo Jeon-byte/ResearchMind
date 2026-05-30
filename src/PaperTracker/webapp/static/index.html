@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ResearchMind</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css">
+    <link rel="stylesheet" href="/static/app.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="brand-row">
+            <strong class="brand-mark">ResearchMind</strong>
+          </div>
+        </div>
+
+        <section class="sidebar-section">
+          <div class="sidebar-heading-row">
+            <strong>Briefs</strong>
+          </div>
+          <button id="sidebar-new-search" class="sidebar-action ghost" type="button">新建搜索</button>
+          <div id="brief-list" class="nav-list"></div>
+        </section>
+
+        <section class="sidebar-section">
+          <div class="sidebar-heading-row">
+            <strong>Knowledge Bases</strong>
+          </div>
+          <button id="sidebar-new-kb" class="sidebar-action ghost" type="button">新建知识库</button>
+          <div id="collection-list" class="nav-list"></div>
+        </section>
+      </aside>
+
+      <main class="main-stage">
+        <section id="brief-view" class="view-section">
+          <div id="brief-landing" class="landing-state">
+            <p class="eyebrow">Paper discovery</p>
+            <h2>开始新一次的论文搜索</h2>
+            <p class="muted">输入主题，ResearchMind 会为你创建 Brief，并保存这次检索的论文结果。</p>
+            <div class="search-toolbar landing-toolbar">
+              <input id="landing-search-query" type="search" placeholder="例如：latent equation embedding neural symbolic regression">
+              <input id="landing-search-max-results" type="number" min="1" max="50" value="5" aria-label="最大结果数">
+              <button id="landing-search-button" type="button">搜索</button>
+            </div>
+          </div>
+
+          <header id="brief-detail-hero" class="panel hero-panel hidden">
+            <div class="hero-row">
+              <div>
+                <p class="eyebrow">Brief</p>
+                <h2 id="brief-title">Brief</h2>
+                <p id="brief-meta" class="muted"></p>
+              </div>
+              <span id="brief-paper-count" class="badge">0 papers</span>
+            </div>
+            <div class="rerun-toolbar">
+              <input id="brief-rerun-max-results" type="number" min="1" max="50" value="5" aria-label="Rerun 最大结果数">
+              <button id="brief-rerun" type="button">Rerun search</button>
+            </div>
+          </header>
+
+          <div id="brief-detail-body" class="brief-results-layout hidden">
+            <section class="panel stack brief-papers-panel">
+              <div class="block-header">
+                <h3>检索结果</h3>
+              </div>
+              <div id="brief-papers" class="brief-papers-scroll stack"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="collection-view" class="view-section hidden">
+          <header class="panel hero-panel">
+            <div class="hero-row">
+              <div>
+                <p class="eyebrow">Knowledge Base</p>
+                <h2 id="collection-title">Knowledge Base</h2>
+                <p id="chat-meta" class="muted"></p>
+              </div>
+              <div class="hero-actions">
+                <button id="ingest-collection" type="button">更新索引</button>
+                <button id="refresh-collection" type="button" aria-label="刷新知识库">刷新</button>
+              </div>
+            </div>
+          </header>
+
+          <div class="kb-layout">
+            <section class="panel kb-panel">
+              <div class="block-header">
+                <h3>论文</h3>
+              </div>
+              <div id="collection-papers" class="scroll-stack"></div>
+            </section>
+
+            <section class="panel ask-panel">
+              <div class="block-header">
+                <h3>知识库问答</h3>
+              </div>
+              <div id="chat-history" class="chat-history"></div>
+              <div class="chat-composer">
+                <textarea id="ask-question" placeholder="向当前知识库提问"></textarea>
+                <div class="composer-row">
+                  <div class="composer-options">
+                    <label for="rag-mode">模式</label>
+                    <select id="rag-mode">
+                      <option value="standard">standard</option>
+                      <option value="decompose">decompose</option>
+                      <option value="agent">agent</option>
+                    </select>
+                  </div>
+                  <button id="ask-button" type="button">发送</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="collection-modal" class="modal">
+      <form id="collection-form" class="modal-card">
+        <h3>新建 Knowledge Base</h3>
+        <input id="collection-name" type="text" placeholder="名称" required>
+        <textarea id="collection-description" placeholder="描述"></textarea>
+        <div class="hero-row">
+          <button id="close-collection-modal" class="ghost-button" type="button">取消</button>
+          <button type="submit">创建</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="rename-modal" class="modal">
+      <form id="rename-form" class="modal-card">
+        <h3 id="rename-modal-title">重命名</h3>
+        <input id="rename-name" type="text" placeholder="名称" required>
+        <div id="rename-description-wrap">
+          <textarea id="rename-description" placeholder="描述"></textarea>
+        </div>
+        <div class="hero-row">
+          <button id="close-rename-modal" class="ghost-button" type="button">取消</button>
+          <button type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="add-paper-modal" class="modal">
+      <form id="add-paper-form" class="modal-card">
+        <h3>加入知识库</h3>
+        <select id="paper-target-collection"></select>
+        <div class="hero-row">
+          <button id="close-add-paper-modal" class="ghost-button" type="button">取消</button>
+          <button type="submit">加入并入库</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/contrib/auto-render.min.js"></script>
+    <script defer src="/static/app.js"></script>
+  </body>
+</html>

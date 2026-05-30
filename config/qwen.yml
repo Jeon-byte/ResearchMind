@@ -1,0 +1,56 @@
+storage:
+  enabled: true
+  content_storage_enabled: true
+  keep_arxiv_version: false
+
+search:
+  sources: [arxiv]
+  max_results: 3
+  max_fetch_items: 25
+  fetch_batch_size: 10
+  pull_every: 7
+  fill_enabled: true
+  max_lookback_days: 30
+
+queries:
+  - NAME: Prompt Engineering
+    OR:
+      - Prompt Engineering
+      - RAG
+    CATEGORY:
+      OR:
+        - cs.CL
+        - cs.AI
+
+output:
+  base_dir: output/
+  formats: [console, markdown, html]
+
+llm:
+  enabled: true
+  api_key_env: LLM_API_KEY
+  enable_translation: true
+  enable_summary: true
+  target_lang: Simplified Chinese
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  model: qwen3.5-flash
+
+rag:
+  models_dir: models
+  multimodal_enabled: true
+  vl_caption_enabled: true
+  vl_caption_model: Qwen/Qwen3-VL-8B-Instruct
+  vl_caption_model_dir: models/Qwen/Qwen3-VL-8B-Instruct
+  vl_caption_adapter_path: ""
+  vl_caption_device_map: auto
+  vl_caption_max_memory: "0:20GiB,1:20GiB,cpu:64GiB"
+  vl_caption_max_figures_per_paper: 8
+  vl_caption_max_new_tokens: 220
+  image_vector_enabled: true
+  image_embedding_model: Qwen/Qwen3-VL-Embedding-8B
+  image_embedding_model_dir: models/Qwen/Qwen3-VL-Embedding-8B
+  image_embedding_device_map: auto
+  image_embedding_max_memory: "0:20GiB,1:20GiB,cpu:64GiB"
+  image_embedding_dim: 4096
+  image_embedding_batch_size: 2
+  image_vector_weight: 0.2

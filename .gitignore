@@ -1,0 +1,70 @@
+# ---- OS / Editor ----
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Packaging / build artifacts
+build/
+dist/
+*.egg-info/
+eggs/
+.eggs/
+wheels/
+pip-wheel-metadata/
+
+# ---- Test / Lint / Typecheck caches ----
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.nox/
+.hypothesis/
+coverage.xml
+.coverage
+.coverage.*
+htmlcov/
+
+# ---- Logs ----
+*.log
+log/
+
+# ---- Notebooks ----
+.ipynb_checkpoints/
+
+# ---- App outputs / runtime state ----
+output/
+.state/
+database/
+models/
+
+# ---- Secrets / local config overrides ----
+.env
+.env.*
+*.env
+!.env.example
+config/custom.yml
+
+# ---- Others ---- 
+.ai_docs/plan
+
+# ---- Publish ----
+site/
+site-publish/

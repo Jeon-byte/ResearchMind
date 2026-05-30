@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ResearchMind</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Crimson+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/app.css?v=20260529-inline-citations">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <div class="brand-row">
+          <strong class="brand-mark">ResearchMind</strong>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading-row">
+          <button id="sidebar-new-search" class="sidebar-action ghost" type="button">+ New Search</button>
+        </div>
+        <div id="brief-list" class="nav-list"></div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading-row">
+          <button id="sidebar-new-kb" class="sidebar-action ghost" type="button">+ New Knowledge Base</button>
+        </div>
+        <div id="collection-list" class="nav-list"></div>
+      </div>
+    </aside>
+
+    <main class="main-stage">
+      <section id="brief-view" class="view-section">
+        <div id="brief-landing" class="landing-state panel">
+          <p class="eyebrow">New Search</p>
+          <h2>开始一份新的研究简报</h2>
+          <p class="muted">输入关键词、设置返回数量，系统会自动创建一个新的 Brief。</p>
+          <div class="search-toolbar landing-toolbar">
+            <input id="landing-search-query" type="text" placeholder="例如 agent planning / multimodal reasoning">
+            <input id="landing-search-max-results" type="number" min="1" max="50" value="5">
+            <button id="landing-search-button" type="button">搜索并创建 Brief</button>
+          </div>
+        </div>
+
+        <div id="brief-detail-hero" class="panel hero-panel hidden">
+          <div class="hero-row">
+            <div>
+              <p class="eyebrow">Brief</p>
+              <h2 id="brief-title">选择一个 Brief</h2>
+              <p id="brief-meta" class="muted">发起新搜索后，会自动生成新的 Brief。</p>
+            </div>
+          </div>
+          <div class="rerun-toolbar">
+            <input id="brief-rerun-max-results" type="number" min="1" max="50" value="5" aria-label="Rerun result count">
+            <button id="brief-rerun" type="button">Rerun Search</button>
+          </div>
+        </div>
+
+        <div id="brief-detail-body" class="two-column hidden">
+          <section class="panel stack brief-papers-panel">
+            <div class="block-header">
+              <h3>Brief Papers</h3>
+              <span id="brief-paper-count" class="muted"></span>
+            </div>
+            <div id="brief-papers" class="stack brief-papers-scroll"></div>
+          </section>
+
+          <section class="panel stack">
+            <div class="block-header">
+              <h3>Brief Info</h3>
+            </div>
+            <div id="brief-info" class="info-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="collection-view" class="view-section hidden">
+        <div class="section-title-row">
+          <h2 id="collection-title">选择一个 Knowledge Base</h2>
+        </div>
+
+        <div class="kb-layout">
+          <section class="panel kb-panel">
+            <div class="block-header">
+              <h3>Library Papers</h3>
+              <button id="refresh-collection" type="button">刷新</button>
+            </div>
+            <div id="collection-papers" class="scroll-stack"></div>
+          </section>
+
+          <section class="panel ask-panel">
+            <div class="block-header">
+              <h3>Ask This Knowledge Base</h3>
+            </div>
+            <div id="chat-history" class="chat-history"></div>
+            <div class="chat-composer">
+              <textarea id="ask-question" rows="3" placeholder="问一个关于该知识库的问题"></textarea>
+              <div class="composer-row">
+                <div class="composer-options">
+                  <select id="rag-mode" aria-label="RAG mode">
+                    <option value="standard">Standard</option>
+                    <option value="decompose">Decompose</option>
+                    <option value="agent">Agent</option>
+                  </select>
+                  <span id="chat-meta" class="muted"></span>
+                </div>
+                <button id="ask-button" type="button">发送</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="collection-modal" class="modal">
+    <form id="collection-form" class="modal-card">
+      <div class="block-header">
+        <h3>新建 Knowledge Base</h3>
+        <button id="close-collection-modal" class="ghost-button" type="button">关闭</button>
+      </div>
+      <input id="collection-name" type="text" placeholder="知识库名称" required>
+      <textarea id="collection-description" rows="3" placeholder="简短说明"></textarea>
+      <button type="submit">创建</button>
+    </form>
+  </dialog>
+
+  <dialog id="rename-modal" class="modal">
+    <form id="rename-form" class="modal-card">
+      <div class="block-header">
+        <h3 id="rename-modal-title">重命名</h3>
+        <button id="close-rename-modal" class="ghost-button" type="button">关闭</button>
+      </div>
+      <input id="rename-name" type="text" placeholder="名称" required>
+      <div id="rename-description-wrap">
+        <textarea id="rename-description" rows="3" placeholder="简短说明（仅 Knowledge Base 使用）"></textarea>
+      </div>
+      <button type="submit">保存</button>
+    </form>
+  </dialog>
+
+  <dialog id="add-paper-modal" class="modal">
+    <form id="add-paper-form" class="modal-card">
+      <div class="block-header">
+        <h3>加入 Knowledge Base</h3>
+        <button id="close-add-paper-modal" class="ghost-button" type="button">关闭</button>
+      </div>
+      <select id="paper-target-collection"></select>
+      <button type="submit">加入</button>
+    </form>
+  </dialog>
+
+  <script src="/static/app.js?v=20260529-inline-citations"></script>
+</body>
+</html>

@@ -1,0 +1,118 @@
+"""Application Configuration Composition.
+
+Loads YAML configuration, merges defaults with user overrides, and builds validated application-wide settings across domains.
+"""
+
+from __future__ import annotations
+
+import importlib.resources
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Mapping
+
+import yaml
+
+from PaperTracker.config.llm import LLMConfig, check_llm, load_llm
+from PaperTracker.config.output import OutputConfig, check_output, load_output
+from PaperTracker.config.rag import RAGConfig, check_rag, load_rag
+from PaperTracker.config.runtime import RuntimeConfig, check_runtime, load_runtime
+from PaperTracker.config.search import SearchConfig, check_search, load_search
+from PaperTracker.config.storage import StorageConfig, check_storage, load_storage
+
+
+@dataclass(frozen=True, slots=True)
+class AppConfig:
+    """Aggregate all domain configurations for the application."""
+
+    runtime: RuntimeConfig
+    search: SearchConfig
+    output: OutputConfig
+    storage: StorageConfig
+    llm: LLMConfig
+    rag: RAGConfig
+
+
+def parse_config_dict(raw: Mapping[str, Any]) -> AppConfig:
+    """Parse a root mapping into a validated application configuration.
+
+    Args:
+        raw: Root configuration mapping loaded from YAML.
+
+    Returns:
+        AppConfig: Parsed and validated application configuration.
+    """
+    runtime = load_runtime(raw)
+    search = load_search(raw)
+    output = load_output(raw)
+    storage = load_storage(raw)
+    llm = load_llm(raw)
+    rag = load_rag(raw)
+
+    check_runtime(runtime)
+    check_search(search)
+    check_output(output)
+    check_storage(storage)
+    check_llm(llm)
+    check_rag(rag)
+
+    config = AppConfig(
+        runtime=runtime,
+        search=search,
+        output=output,
+        storage=storage,
+        llm=llm,
+        rag=rag,
+    )
+    check_cross_domain(config)
+    return config
+
+
+def load_config_with_defaults(
+    config_path: Path, _defaults_text: str | None = None
+) -> AppConfig:
+    """Load config by merging internal defaults with user override.
+
+    Args:
+        config_path: Path to user config file.
+        _defaults_text: Optional defaults YAML text (for testing only).
+    """
+    defaults_text = _defaults_text if _defaults_text is not None else _load_defaults_text()
+    base = parse_yaml(defaults_text)
+    override = parse_yaml(config_path.read_text(encoding="utf-8"))
+    merged = merge_config_dicts(base, override)
+    return parse_config_dict(merged)
+
+
+def check_cross_domain(config: AppConfig) -> None:
+    """Validate constraints that span multiple configuration domains.
+
+    Args:
+        config: Parsed application configuration to validate.
+    """
+    # No cross-domain hard constraints at the moment.
+    pass
+
+
+def parse_yaml(text: str) -> dict[str, Any]:
+    """Parse raw YAML text into a mapping."""
+    data = yaml.safe_load(text) or {}
+    if not isinstance(data, Mapping):
+        raise ValueError("Config root must be a mapping/object")
+    return dict(data)
+
+
+def merge_config_dicts(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
+    """Deep-merge two config mappings."""
+    merged: dict[str, Any] = dict(base)
+    for key, value in override.items():
+        if key in merged and isinstance(merged[key], Mapping) and isinstance(value, Mapping):
+            merged[key] = merge_config_dicts(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _load_defaults_text() -> str:
+    """Read bundled default config from package resources."""
+    pkg = importlib.resources.files("PaperTracker.config")
+    return (pkg / "defaults.yml").read_text(encoding="utf-8")

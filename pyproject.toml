@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paper-tracker"
+version = "0.2.0"
+description = "Minimal paper tracker (arXiv search + CLI output)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "click>=8.1.7",
+  "fastapi>=0.115.0",
+  "feedparser>=6.0.11",
+  "huggingface-hub>=0.24.0",
+  "numpy>=1.26.0",
+  "PyMuPDF>=1.24.10",
+  "PyYAML>=6.0.1",
+  "python-dateutil>=2.9.0.post0",
+  "python-dotenv>=1.0.0",
+  "requests>=2.32.0",
+  "uvicorn>=0.30.6",
+]
+
+[project.optional-dependencies]
+rag = [
+  "FlagEmbedding>=1.2.11",
+  "faiss-cpu>=1.8.0",
+  "sentence-transformers>=3.0.0",
+]
+vision = [
+  "peft>=0.13.0",
+  "Pillow>=10.0.0",
+  "qwen-vl-utils>=0.0.8",
+  "torch>=2.4.0",
+  "transformers>=4.57.0",
+]
+
+[project.scripts]
+paper-tracker = "PaperTracker.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+PaperTracker = [
+  "config/defaults.yml",
+  "webapp/static/*",
+]
