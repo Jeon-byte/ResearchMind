@@ -110,7 +110,7 @@ ResearchMind 由两个核心工作区组成：
 
 ![ResearchMind Agent Mode](show/agent模式.png)
 
-后续计划：
+## 后续计划：
 
 - 引入更完整的 AgentState 和 Tool Registry。
 - 支持 citation recovery，必要时扩展相邻 chunk 补足引用。
