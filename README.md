@@ -8,8 +8,6 @@ ResearchMind 是一个面向科研阅读的本地论文知识库工作台。它�
 
 ![ResearchMind Knowledge Base](show/show2.png)
 
-![ResearchMind Agent Mode](show/agent模式.png)
-
 ## 产品定位
 
 ResearchMind 由两个核心工作区组成：
@@ -98,7 +96,7 @@ ResearchMind 由两个核心工作区组成：
 - **decompose**：轻量拆问模式，将复杂问题拆成多个子问题后检索并融合。
 - **agent**：ReAct-style Agentic Search。LLM 在每轮检索后读取当前证据摘要，决定继续搜索或结束，并生成下一轮工具调用 query。
 
-## Agentic Search
+### Agentic Search 06/04/26添加
 
 当前 `agent` 模式已经接入可解释的多轮检索流程：
 
@@ -109,6 +107,8 @@ ResearchMind 由两个核心工作区组成：
 - 前端通过 SSE 流式显示 Agent 检索过程，包括每轮 query、召回数量、可见判断摘要和最终证据规模。
 
 为了区分正式回答和 agent 工作过程，前端将检索轨迹放在灰色小字的小框中；内容较多时可在框内滚动浏览。这里展示的是可审计的工具调用轨迹和可见判断摘要，不展示模型隐藏思维链原文。
+
+![ResearchMind Agent Mode](show/agent模式.png)
 
 后续计划：
 
