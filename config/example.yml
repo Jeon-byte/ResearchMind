@@ -88,7 +88,11 @@ rag:
   candidate_k: 24
   default_mode: standard                  # standard | decompose | agent
   decompose_enabled: true
-  agent_enabled: false                    # agent-lite is available behind this flag
+  agent_enabled: false                    # iterative LLM-guided agentic search
+  agent_max_steps: 3
+  agent_queries_per_step: 2
+  agent_evidence_cap: 16
+  agent_planner_enabled: false
   multimodal_enabled: true                # figure assets + caption-based figure retrieval
   vl_caption_enabled: false               # true: use local Qwen3-VL to enrich extracted figure captions
   vl_caption_model: Qwen/Qwen3-VL-8B-Instruct

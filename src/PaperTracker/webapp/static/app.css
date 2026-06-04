@@ -660,6 +660,125 @@ h3 {
   align-self: flex-start;
 }
 
+.agent-trace {
+  margin-bottom: 12px;
+  border: 1px solid rgba(120, 120, 120, 0.22);
+  border-radius: 12px;
+  background: rgba(246, 246, 244, 0.72);
+  padding: 8px 9px;
+}
+
+.agent-trace summary {
+  cursor: pointer;
+  color: #6b6b66;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.agent-trace-body {
+  max-height: 210px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+
+.agent-trace ol {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.agent-trace-step {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.agent-step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(120, 120, 120, 0.12);
+  color: #77736e;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.agent-trace p {
+  margin: 1px 0 0;
+  color: #66645f;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.agent-note {
+  color: #77746e !important;
+  font-size: 0.78rem !important;
+}
+
+.agent-note strong {
+  display: inline-block;
+  margin-right: 6px;
+  color: #696660;
+}
+
+.agent-action {
+  display: inline-flex;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: rgba(120, 120, 120, 0.12);
+  color: #66645f;
+  padding: 2px 7px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.agent-query-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.agent-query-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: min(100%, 360px);
+  min-width: 0;
+  gap: 6px;
+  border: 1px solid rgba(120, 120, 120, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #686661;
+  padding: 3px 7px;
+  font-size: 0.78rem;
+}
+
+.agent-query-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-query-chip em {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgba(120, 120, 120, 0.1);
+  color: #77736e;
+  font-style: normal;
+  padding: 1px 5px;
+  font-size: 0.72rem;
+}
+
 .message-citations {
   margin-top: 12px;
   border-top: 1px solid rgba(216, 204, 187, 0.74);

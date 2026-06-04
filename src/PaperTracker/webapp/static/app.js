@@ -273,8 +273,12 @@ async function loadBootstrap() {
   state.rag = payload.rag || {};
   byId("landing-search-max-results").value = payload.search_defaults.max_results;
   if (byId("rag-mode")) byId("rag-mode").value = state.rag.default_mode || "standard";
-  if (!state.rag.agent_enabled && byId("rag-mode")) {
-    byId("rag-mode").querySelector('option[value="agent"]')?.setAttribute("disabled", "disabled");
+  const ragMode = byId("rag-mode");
+  if (ragMode) {
+    const decomposeOption = ragMode.querySelector('option[value="decompose"]');
+    const agentOption = ragMode.querySelector('option[value="agent"]');
+    decomposeOption?.toggleAttribute("disabled", !state.rag.decompose_enabled);
+    agentOption?.toggleAttribute("disabled", !state.rag.agent_enabled);
   }
   renderNavLists();
   focusSearchLanding();
@@ -583,6 +587,7 @@ async function onAsk() {
     askButton.disabled = true;
     askButton.textContent = "检索与生成中...";
   }
+  const selectedMode = byId("rag-mode")?.value || "standard";
   if (byId("chat-meta")) byId("chat-meta").textContent = "正在检索证据并生成回答...";
   const history = byId("chat-history");
   const existingEmpty = history?.querySelector(".empty-state");
@@ -594,7 +599,8 @@ async function onAsk() {
   assistantItem.className = "chat-message assistant";
   let streamedAnswer = "";
   let donePayload = null;
-  assistantItem.innerHTML = renderAssistantContent("");
+  let agentTrace = [];
+  assistantItem.innerHTML = `${renderAgentTrace(agentTrace, { pending: selectedMode === "agent" })}${renderAssistantContent("")}`;
   history?.appendChild(userItem);
   history?.appendChild(assistantItem);
   if (history) history.scrollTop = history.scrollHeight;
@@ -606,14 +612,26 @@ async function onAsk() {
         collection_id: state.activeCollectionId,
         question,
         conversation_id: state.currentConversationId,
-        mode: byId("rag-mode")?.value || "standard",
+        mode: selectedMode,
       }),
     }, (event) => {
       if (event.type === "meta") {
         state.currentConversationId = event.conversation_id;
+      } else if (event.type === "trace_delta") {
+        if (event.item) agentTrace.push(event.item);
+        assistantItem.innerHTML = `${renderAgentTrace(agentTrace, { enabled: selectedMode === "agent" })}${renderAssistantContent(streamedAnswer)}`;
+        renderMath(assistantItem.querySelector(".message-content"));
+        scrollAgentTrace(assistantItem);
+        if (history) history.scrollTop = history.scrollHeight;
+      } else if (event.type === "trace") {
+        agentTrace = event.items || [];
+        assistantItem.innerHTML = `${renderAgentTrace(agentTrace, { enabled: selectedMode === "agent" })}${renderAssistantContent(streamedAnswer)}`;
+        renderMath(assistantItem.querySelector(".message-content"));
+        scrollAgentTrace(assistantItem);
+        if (history) history.scrollTop = history.scrollHeight;
       } else if (event.type === "token") {
         streamedAnswer += event.content || "";
-        assistantItem.innerHTML = renderAssistantContent(streamedAnswer);
+        assistantItem.innerHTML = `${renderAgentTrace(agentTrace, { enabled: selectedMode === "agent" })}${renderAssistantContent(streamedAnswer)}`;
         renderMath(assistantItem.querySelector(".message-content"));
         if (history) history.scrollTop = history.scrollHeight;
       } else if (event.type === "done") {
@@ -630,7 +648,9 @@ async function onAsk() {
   }
   if (donePayload) {
     state.currentConversationId = donePayload.conversation_id || state.currentConversationId;
+    agentTrace = donePayload.retrieval_debug?.trace || agentTrace;
     assistantItem.innerHTML = `
+      ${renderAgentTrace(agentTrace, { enabled: selectedMode === "agent" })}
       ${renderAssistantContent(donePayload.answer || streamedAnswer)}
       ${renderMessageCitations(donePayload.citations || [])}
     `;
@@ -638,6 +658,49 @@ async function onAsk() {
   }
   byId("ask-question").value = "";
   if (byId("chat-meta")) byId("chat-meta").textContent = "";
+}
+
+function renderAgentTrace(trace, options = {}) {
+  if (!options.enabled && !options.pending) return "";
+  const items = Array.isArray(trace) ? trace : [];
+  if (!items.length && !options.pending) return "";
+  const rows = items.length
+    ? items.map((item, index) => {
+        const queries = Array.isArray(item.queries) && item.queries.length
+          ? `<div class="agent-query-row">${item.queries.map((query) => `
+              <span class="agent-query-chip" title="${escapeHtml(query.query || "")}">
+                <span>${escapeHtml(query.query || "")}</span>
+                ${query.hit_count !== undefined ? `<em>${escapeHtml(String(query.hit_count))} 条</em>` : ""}
+              </span>
+            `).join("")}</div>`
+          : "";
+        return `
+          <li class="agent-trace-step">
+            <span class="agent-step-index">${index + 1}</span>
+            <div>
+              <p>${escapeHtml(item.message || item.stage || "执行一步检索")}</p>
+              ${item.observation ? `<p class="agent-note"><strong>观察</strong>${escapeHtml(item.observation)}</p>` : ""}
+              ${item.rationale ? `<p class="agent-note"><strong>判断</strong>${escapeHtml(item.rationale)}</p>` : ""}
+              ${item.action ? `<span class="agent-action">${escapeHtml(item.action)}</span>` : ""}
+              ${queries}
+            </div>
+          </li>
+        `;
+      }).join("")
+    : `<li><span class="agent-step-index">…</span><div><p>正在启动检索流程...</p></div></li>`;
+  return `
+    <details class="agent-trace" open>
+      <summary>Agent 检索过程</summary>
+      <div class="agent-trace-body">
+        <ol>${rows}</ol>
+      </div>
+    </details>
+  `;
+}
+
+function scrollAgentTrace(container) {
+  const traceBody = container?.querySelector(".agent-trace-body");
+  if (traceBody) traceBody.scrollTop = traceBody.scrollHeight;
 }
 
 function formatScore(value) {

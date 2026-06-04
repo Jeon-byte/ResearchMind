@@ -59,8 +59,17 @@ class CollectionQAService:
         del user_message_id
 
         rag_hits = []
+        trace_events: list[dict] = []
         if self.rag_service is not None:
-            rag_hits = self.rag_service.retrieve(collection_id, question, top_k=self.max_chunks, mode=mode)
+            rag_hits = self.rag_service.retrieve(
+                collection_id,
+                question,
+                top_k=self.max_chunks,
+                mode=mode,
+                llm_client=self.llm_client,
+                llm_model=self.llm_model,
+                trace=trace_events,
+            )
         if rag_hits:
             answer = self.rag_service.generate_answer(
                 question=question,
@@ -93,6 +102,7 @@ class CollectionQAService:
                 retrieval_debug={
                     "mode": mode,
                     "source": "rag",
+                    "trace": trace_events,
                     "hits": [hit.to_dict() for hit in rag_hits],
                     "status": self.rag_service.debug_status(),
                 },
@@ -156,9 +166,36 @@ class CollectionQAService:
         yield {"type": "meta", "conversation_id": conversation_id}
 
         rag_hits = []
+        trace_events: list[dict] = []
         if self.rag_service is not None:
-            rag_hits = self.rag_service.retrieve(collection_id, question, top_k=self.max_chunks, mode=mode)
+            if mode == "agent":
+                for retrieval_event in self.rag_service.iter_retrieve_agent(
+                    collection_id,
+                    question,
+                    top_k=self.max_chunks,
+                    llm_client=self.llm_client,
+                    llm_model=self.llm_model,
+                ):
+                    if retrieval_event.get("type") == "trace":
+                        item = retrieval_event.get("item") or {}
+                        trace_events.append(item)
+                        yield {"type": "trace_delta", "item": item, "items": trace_events}
+                    elif retrieval_event.get("type") == "final":
+                        rag_hits = retrieval_event.get("hits") or []
+                        trace_events = retrieval_event.get("trace") or trace_events
+            else:
+                rag_hits = self.rag_service.retrieve(
+                    collection_id,
+                    question,
+                    top_k=self.max_chunks,
+                    mode=mode,
+                    llm_client=self.llm_client,
+                    llm_model=self.llm_model,
+                    trace=trace_events,
+                )
         if rag_hits:
+            if trace_events:
+                yield {"type": "trace", "items": trace_events}
             citations = [
                 {
                     "chunk_id": hit.chunk.db_chunk_id,
@@ -194,6 +231,7 @@ class CollectionQAService:
                 "retrieval_debug": {
                     "mode": mode,
                     "source": "rag",
+                    "trace": trace_events,
                     "hits": [hit.to_dict() for hit in rag_hits],
                     "status": self.rag_service.debug_status(),
                 },

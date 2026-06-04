@@ -38,6 +38,7 @@ class ImageEmbedder:
         self._processor: Any = None
         self._device: Any = None
         self._available = False
+        self._unavailable_error = ""
         self._lock = threading.Lock()
 
     @property
@@ -48,9 +49,12 @@ class ImageEmbedder:
     def available(self) -> bool:
         if self._available:
             return True
+        if self._unavailable_error:
+            return False
         try:
             self._load()
         except Exception as error:  # noqa: BLE001 - optional image retrieval must degrade gracefully
+            self._unavailable_error = str(error)
             log.warning("Image embedder unavailable: %s", error)
             return False
         return self._available

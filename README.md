@@ -8,6 +8,8 @@ ResearchMind 是一个面向科研阅读的本地论文知识库工作台。它�
 
 ![ResearchMind Knowledge Base](show/show2.png)
 
+![ResearchMind Agent Mode](show/agent模式.png)
+
 ## 产品定位
 
 ResearchMind 由两个核心工作区组成：
@@ -94,21 +96,26 @@ ResearchMind 由两个核心工作区组成：
 
 - **standard**：默认模式，执行向量检索、FTS、图像检索、多路融合和 rerank。
 - **decompose**：轻量拆问模式，将复杂问题拆成多个子问题后检索并融合。
-- **agent**：待做能力，计划基于 LangGraph 实现 Agentic RAG。
+- **agent**：ReAct-style Agentic Search。LLM 在每轮检索后读取当前证据摘要，决定继续搜索或结束，并生成下一轮工具调用 query。
 
-## Agentic RAG 计划
+## Agentic Search
 
-Agentic RAG 模式待做，计划 RAG Pipeline 编排和带循环反馈的 Agent 检索：
+当前 `agent` 模式已经接入可解释的多轮检索流程：
 
-- 使用 LangGraph 构建状态机：`plan_query -> decide_action -> run_tool -> check_termination -> answer_or_abort`。
-- 引入 AgentState，记录问题、目标、假设、开放子问题、证据和工具历史。
-- 用 Query Planner 识别问题类型，并生成 normalized question / sub-queries。
-- 用 Tool Registry 封装检索工具，如 text、figure、text+figure 的 `search_evidence`。
-- 用 Evidence Store 聚合多轮证据，按 chunk id 去重并记录来源 query。
-- 支持证据不足时自动改写 query 并再次检索。
+- 先用原问题执行一次标准 RAG 检索。
+- LLM 作为 ReAct planner 读取当前证据摘要，输出 `observation`、`rationale`、`action` 和下一轮检索 query。
+- 后端执行检索工具，累计证据池并按 chunk id 去重。
+- 多轮循环后合并候选证据，进入 rerank 和最终回答生成。
+- 前端通过 SSE 流式显示 Agent 检索过程，包括每轮 query、召回数量、可见判断摘要和最终证据规模。
+
+为了区分正式回答和 agent 工作过程，前端将检索轨迹放在灰色小字的小框中；内容较多时可在框内滚动浏览。这里展示的是可审计的工具调用轨迹和可见判断摘要，不展示模型隐藏思维链原文。
+
+后续计划：
+
+- 引入更完整的 AgentState 和 Tool Registry。
 - 支持 citation recovery，必要时扩展相邻 chunk 补足引用。
 - 对关键图表触发 VLM visual verification。
-- 最终输出 answer audit，标注证据覆盖度、不足点和低置信度提示。
+- 输出 answer audit，标注证据覆盖度、不足点和低置信度提示。
 
 ## 技术栈
 
@@ -134,7 +141,7 @@ LLM_API_KEY=your_api_key
 
 ```bash
 cd research_mind
-paper-tracker serve --config config/qwen.yml
+.venv/bin/paper-tracker serve --config config/qwen.yml
 ```
 
 打开：

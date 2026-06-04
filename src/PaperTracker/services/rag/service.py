@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from PaperTracker.config.rag import RAGConfig
-from PaperTracker.llm.client import LLMApiClient
+from PaperTracker.llm.client import LLMApiClient, extract_json
 from PaperTracker.services.rag.image_embedder import ImageEmbedder
 from PaperTracker.services.rag.embedder import TextEmbedder
 from PaperTracker.services.rag.metadata_store import RAGMetadataStore
@@ -236,13 +236,31 @@ class CollectionRAGService:
         *,
         top_k: int = 6,
         mode: str = "standard",
+        llm_client: LLMApiClient | None = None,
+        llm_model: str | None = None,
+        trace: list[dict] | None = None,
     ) -> list[RetrievalHit]:
         """Retrieve top evidence chunks from one KB workspace."""
+        if trace is not None:
+            trace.append({"stage": "start", "mode": mode, "message": f"使用 {mode} 模式检索证据"})
         if mode == "decompose":
-            return self.retrieve_decompose(collection_id, question, top_k=top_k)
+            hits = self.retrieve_decompose(collection_id, question, top_k=top_k)
+            if trace is not None:
+                trace.append({"stage": "finish", "message": f"完成 decompose 检索，返回 {len(hits)} 条证据"})
+            return hits
         if mode == "agent":
-            return self.retrieve_agent(collection_id, question, top_k=top_k)
-        return self.retrieve_standard(collection_id, question, top_k=top_k)
+            return self.retrieve_agent(
+                collection_id,
+                question,
+                top_k=top_k,
+                llm_client=llm_client,
+                llm_model=llm_model,
+                trace=trace,
+            )
+        hits = self.retrieve_standard(collection_id, question, top_k=top_k)
+        if trace is not None:
+            trace.append({"stage": "finish", "message": f"完成 standard 检索，返回 {len(hits)} 条证据"})
+        return hits
 
     def retrieve_standard(self, collection_id: int, question: str, *, top_k: int = 6) -> list[RetrievalHit]:
         """Standard dense/hybrid retrieval with optional rerank."""
@@ -290,15 +308,289 @@ class CollectionRAGService:
             return reranker.rerank(question, candidates, top_k=top_k)
         return [replace(hit, rank=rank) for rank, hit in enumerate(candidates[:top_k], start=1)]
 
-    def retrieve_agent(self, collection_id: int, question: str, *, top_k: int = 6) -> list[RetrievalHit]:
-        """Agent-lite retrieval: standard first, then decompose if evidence is sparse."""
-        hits = self.retrieve_standard(collection_id, question, top_k=top_k)
-        if len(hits) >= min(3, top_k):
-            return [replace(hit, retrieval_path=f"agent:{hit.retrieval_path}") for hit in hits]
-        return [
-            replace(hit, retrieval_path=f"agent:{hit.retrieval_path}")
-            for hit in self.retrieve_decompose(collection_id, question, top_k=top_k)
-        ]
+    def retrieve_agent(
+        self,
+        collection_id: int,
+        question: str,
+        *,
+        top_k: int = 6,
+        llm_client: LLMApiClient | None = None,
+        llm_model: str | None = None,
+        trace: list[dict] | None = None,
+    ) -> list[RetrievalHit]:
+        """Iterative agentic retrieval with LLM-guided follow-up searches.
+
+        This is a compact Agentic RAG loop inspired by MultiRAG-Doc: it gathers
+        initial evidence, asks the LLM what evidence is still missing, runs
+        targeted follow-up searches, and finally reranks the accumulated pool.
+        When no LLM is configured, it falls back to decompose retrieval.
+        """
+        if llm_client is None or not llm_model:
+            if trace is not None:
+                trace.append({"stage": "fallback", "message": "LLM 未配置，agent 降级为 decompose 检索"})
+            return [
+                replace(hit, retrieval_path=f"agent:fallback:{hit.retrieval_path}")
+                for hit in self.retrieve_decompose(collection_id, question, top_k=top_k)
+            ]
+
+        max_steps = self.config.agent_max_steps if self.config is not None else 3
+        queries_per_step = self.config.agent_queries_per_step if self.config is not None else 2
+        evidence_cap = self.config.agent_evidence_cap if self.config is not None else 16
+        per_query_top_k = max(top_k, 4)
+        evidence: dict[int, RetrievalHit] = {}
+        previous_queries: list[str] = []
+
+        current_queries = [question]
+        if trace is not None:
+            planner = "ReAct LLM planner" if self.config is not None and self.config.agent_planner_enabled else "本地规则 planner"
+            trace.append(
+                {
+                    "stage": "plan",
+                    "message": f"Agent 将最多执行 {max_steps} 轮检索，每轮最多 {queries_per_step} 个 query，使用 {planner}",
+                }
+            )
+        for step in range(max_steps):
+            step_queries = []
+            for query in current_queries[:queries_per_step]:
+                normalized = query.strip()
+                if not normalized or _seen_query(normalized, previous_queries):
+                    continue
+                previous_queries.append(normalized)
+                hits = self.retrieve_standard(collection_id, normalized, top_k=per_query_top_k)
+                step_queries.append({"query": normalized, "hit_count": len(hits)})
+                for hit in hits:
+                    chunk_id = hit.chunk.db_chunk_id
+                    scored = replace(hit, retrieval_path=f"s{step + 1}:{hit.retrieval_path}")
+                    existing = evidence.get(chunk_id)
+                    if existing is None or scored.score > existing.score:
+                        evidence[chunk_id] = scored
+                if len(evidence) >= evidence_cap:
+                    break
+            if trace is not None and step_queries:
+                trace.append(
+                    {
+                        "stage": "search",
+                        "step": step + 1,
+                        "message": f"第 {step + 1} 轮检索完成，累计证据池 {len(evidence)} 条",
+                        "queries": step_queries,
+                        "evidence_count": len(evidence),
+                    }
+                )
+
+            if len(evidence) >= evidence_cap or step == max_steps - 1:
+                break
+
+            if self.config is not None and self.config.agent_planner_enabled:
+                decision = _plan_agent_action(
+                    question=question,
+                    evidence=list(evidence.values()),
+                    previous_queries=previous_queries,
+                    llm_client=llm_client,
+                    llm_model=llm_model,
+                    max_queries=queries_per_step,
+                )
+                if trace is not None:
+                    trace.append(
+                        {
+                            "stage": "react",
+                            "message": decision["message"],
+                            "observation": decision.get("observation", ""),
+                            "rationale": decision.get("rationale", ""),
+                            "action": decision.get("action", "search"),
+                            "queries": [{"query": query} for query in decision.get("queries", [])],
+                        }
+                    )
+                current_queries = list(decision.get("queries", []))
+            else:
+                current_queries = _heuristic_agent_queries(
+                    question,
+                    previous_queries=previous_queries,
+                    max_queries=queries_per_step,
+                )
+            if trace is not None and current_queries and not (self.config is not None and self.config.agent_planner_enabled):
+                trace.append(
+                    {
+                        "stage": "next_queries",
+                        "message": "根据当前问题类型生成下一轮检索 query",
+                        "queries": [{"query": query} for query in current_queries],
+                    }
+                )
+            if not current_queries:
+                break
+
+        candidates = sorted(evidence.values(), key=lambda item: item.score, reverse=True)[:evidence_cap]
+        if not candidates:
+            if trace is not None:
+                trace.append({"stage": "fallback", "message": "agent 证据池为空，降级为 decompose 检索"})
+            return [
+                replace(hit, retrieval_path=f"agent:fallback:{hit.retrieval_path}")
+                for hit in self.retrieve_decompose(collection_id, question, top_k=top_k)
+            ]
+        reranker = self._reranker()
+        if reranker is not None:
+            hits = [
+                replace(hit, retrieval_path=f"agent:{hit.retrieval_path}")
+                for hit in reranker.rerank(question, candidates, top_k=top_k)
+            ]
+        else:
+            hits = [
+                replace(hit, rank=rank, retrieval_path=f"agent:{hit.retrieval_path}")
+                for rank, hit in enumerate(candidates[:top_k], start=1)
+            ]
+        if trace is not None:
+            trace.append(
+                {
+                    "stage": "finish",
+                    "message": f"Agent 合并去重后保留 {len(candidates)} 条候选证据，最终返回 {len(hits)} 条",
+                    "evidence_count": len(candidates),
+                    "returned_count": len(hits),
+                }
+            )
+        return hits
+
+    def iter_retrieve_agent(
+        self,
+        collection_id: int,
+        question: str,
+        *,
+        top_k: int = 6,
+        llm_client: LLMApiClient | None = None,
+        llm_model: str | None = None,
+    ) -> Iterator[dict]:
+        """Stream ReAct-style agent retrieval events and finish with final hits."""
+        trace_events: list[dict] = []
+
+        def emit(item: dict) -> None:
+            trace_events.append(item)
+
+        if llm_client is None or not llm_model:
+            item = {"stage": "fallback", "message": "LLM 未配置，agent 降级为 decompose 检索"}
+            emit(item)
+            yield {"type": "trace", "item": item}
+            hits = [
+                replace(hit, retrieval_path=f"agent:fallback:{hit.retrieval_path}")
+                for hit in self.retrieve_decompose(collection_id, question, top_k=top_k)
+            ]
+            yield {"type": "final", "hits": hits, "trace": trace_events}
+            return
+
+        max_steps = self.config.agent_max_steps if self.config is not None else 3
+        queries_per_step = self.config.agent_queries_per_step if self.config is not None else 2
+        evidence_cap = self.config.agent_evidence_cap if self.config is not None else 16
+        per_query_top_k = max(top_k, 4)
+        evidence: dict[int, RetrievalHit] = {}
+        previous_queries: list[str] = []
+
+        planner = "ReAct LLM planner" if self.config is not None and self.config.agent_planner_enabled else "本地规则 planner"
+        item = {
+            "stage": "plan",
+            "message": f"Agent 将最多执行 {max_steps} 轮检索，每轮最多 {queries_per_step} 个 query，使用 {planner}",
+        }
+        emit(item)
+        yield {"type": "trace", "item": item}
+
+        current_queries = [question]
+        for step in range(max_steps):
+            step_queries = []
+            for query in current_queries[:queries_per_step]:
+                normalized = query.strip()
+                if not normalized or _seen_query(normalized, previous_queries):
+                    continue
+                previous_queries.append(normalized)
+                hits = self.retrieve_standard(collection_id, normalized, top_k=per_query_top_k)
+                step_queries.append({"query": normalized, "hit_count": len(hits)})
+                for hit in hits:
+                    chunk_id = hit.chunk.db_chunk_id
+                    scored = replace(hit, retrieval_path=f"s{step + 1}:{hit.retrieval_path}")
+                    existing = evidence.get(chunk_id)
+                    if existing is None or scored.score > existing.score:
+                        evidence[chunk_id] = scored
+                if len(evidence) >= evidence_cap:
+                    break
+
+            if step_queries:
+                item = {
+                    "stage": "search",
+                    "step": step + 1,
+                    "message": f"第 {step + 1} 轮检索完成，累计证据池 {len(evidence)} 条",
+                    "queries": step_queries,
+                    "evidence_count": len(evidence),
+                }
+                emit(item)
+                yield {"type": "trace", "item": item}
+
+            if len(evidence) >= evidence_cap or step == max_steps - 1:
+                break
+
+            if self.config is not None and self.config.agent_planner_enabled:
+                decision = _plan_agent_action(
+                    question=question,
+                    evidence=list(evidence.values()),
+                    previous_queries=previous_queries,
+                    llm_client=llm_client,
+                    llm_model=llm_model,
+                    max_queries=queries_per_step,
+                )
+                item = {
+                    "stage": "react",
+                    "message": decision["message"],
+                    "observation": decision.get("observation", ""),
+                    "rationale": decision.get("rationale", ""),
+                    "action": decision.get("action", "search"),
+                    "queries": [{"query": query} for query in decision.get("queries", [])],
+                }
+                emit(item)
+                yield {"type": "trace", "item": item}
+                current_queries = list(decision.get("queries", []))
+            else:
+                current_queries = _heuristic_agent_queries(
+                    question,
+                    previous_queries=previous_queries,
+                    max_queries=queries_per_step,
+                )
+                if current_queries:
+                    item = {
+                        "stage": "next_queries",
+                        "message": "根据当前问题类型生成下一轮检索 query",
+                        "queries": [{"query": query} for query in current_queries],
+                    }
+                    emit(item)
+                    yield {"type": "trace", "item": item}
+            if not current_queries:
+                break
+
+        candidates = sorted(evidence.values(), key=lambda item: item.score, reverse=True)[:evidence_cap]
+        if not candidates:
+            item = {"stage": "fallback", "message": "agent 证据池为空，降级为 decompose 检索"}
+            emit(item)
+            yield {"type": "trace", "item": item}
+            hits = [
+                replace(hit, retrieval_path=f"agent:fallback:{hit.retrieval_path}")
+                for hit in self.retrieve_decompose(collection_id, question, top_k=top_k)
+            ]
+            yield {"type": "final", "hits": hits, "trace": trace_events}
+            return
+
+        reranker = self._reranker()
+        if reranker is not None:
+            hits = [
+                replace(hit, retrieval_path=f"agent:{hit.retrieval_path}")
+                for hit in reranker.rerank(question, candidates, top_k=top_k)
+            ]
+        else:
+            hits = [
+                replace(hit, rank=rank, retrieval_path=f"agent:{hit.retrieval_path}")
+                for rank, hit in enumerate(candidates[:top_k], start=1)
+            ]
+        item = {
+            "stage": "finish",
+            "message": f"Agent 合并去重后保留 {len(candidates)} 条候选证据，最终返回 {len(hits)} 条",
+            "evidence_count": len(candidates),
+            "returned_count": len(hits),
+        }
+        emit(item)
+        yield {"type": "trace", "item": item}
+        yield {"type": "final", "hits": hits, "trace": trace_events}
 
     def _retrieve_vector(self, collection_id: int, question: str, *, top_k: int) -> list[RetrievalHit]:
         """Retrieve vector hits from the KB workspace."""
@@ -559,12 +851,15 @@ class CollectionRAGService:
             return _build_evidence_digest(hits)
 
         messages = _build_answer_messages(question, hits)
-        return llm_client.chat_completion(
-            messages=messages,
-            model=llm_model,
-            temperature=0.0,
-            max_tokens=1000,
-        ).strip()
+        try:
+            return llm_client.chat_completion(
+                messages=messages,
+                model=llm_model,
+                temperature=0.0,
+                max_tokens=1000,
+            ).strip()
+        except Exception:
+            return _build_evidence_digest(hits)
 
     def generate_answer_stream(
         self,
@@ -584,12 +879,15 @@ class CollectionRAGService:
         if llm_client is None or not llm_model:
             yield _build_evidence_digest(hits)
             return
-        yield from llm_client.stream_chat_completion(
-            messages=_build_answer_messages(question, hits),
-            model=llm_model,
-            temperature=0.0,
-            max_tokens=1000,
-        )
+        try:
+            yield from llm_client.stream_chat_completion(
+                messages=_build_answer_messages(question, hits),
+                model=llm_model,
+                temperature=0.0,
+                max_tokens=1000,
+            )
+        except Exception:
+            yield _build_evidence_digest(hits)
 
 
 def _build_evidence_digest(hits: list[RetrievalHit]) -> str:
@@ -879,6 +1177,165 @@ def _is_method_or_experiment_question(question: str) -> bool:
             "流程",
         )
     )
+
+
+def _plan_agent_action(
+    *,
+    question: str,
+    evidence: list[RetrievalHit],
+    previous_queries: list[str],
+    llm_client: LLMApiClient,
+    llm_model: str,
+    max_queries: int,
+) -> dict:
+    """Ask the LLM for the next ReAct-style search action."""
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a ReAct-style search agent for a scientific RAG system. "
+                "At each step, inspect the current retrieved evidence, decide whether to search again or finish, "
+                "and choose focused retrieval queries when more evidence is needed. "
+                "Return only JSON. Do not reveal private chain-of-thought. "
+                "Provide only a concise, user-visible rationale summary."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Question:\n{question}\n\n"
+                f"Previous queries:\n{previous_queries}\n\n"
+                f"Current evidence:\n{_summarize_agent_evidence(evidence)}\n\n"
+                "Return JSON with this schema:\n"
+                "{\n"
+                "  \"observation\": \"brief summary of what the current evidence covers\",\n"
+                "  \"rationale\": \"concise visible reason for the next action, no hidden chain-of-thought\",\n"
+                "  \"action\": \"search\" | \"finish\",\n"
+                "  \"queries\": [\"specific follow-up query\", \"another query\"]\n"
+                "}"
+            ),
+        },
+    ]
+    try:
+        raw = llm_client.chat_completion(
+            messages=messages,
+            model=llm_model,
+            temperature=0.0,
+            max_tokens=500,
+        )
+    except Exception:
+        return {
+            "action": "finish",
+            "message": "ReAct planner 调用超时或失败，使用当前证据结束检索",
+            "observation": "",
+            "rationale": "",
+            "queries": [],
+        }
+    data = extract_json(raw)
+    action = str(data.get("action") or "").strip().lower()
+    if bool(data.get("finish")):
+        action = "finish"
+    if action not in {"search", "finish"}:
+        action = "search"
+    queries_obj = data.get("queries") or []
+    if action == "finish" or not isinstance(queries_obj, list):
+        return {
+            "action": "finish",
+            "message": "ReAct planner 判断当前证据已经足够，结束检索",
+            "observation": str(data.get("observation") or "").strip(),
+            "rationale": str(data.get("rationale") or "").strip(),
+            "queries": [],
+        }
+    queries = []
+    for item in queries_obj:
+        query = str(item or "").strip()
+        if not query or _seen_query(query, [*previous_queries, *queries]):
+            continue
+        queries.append(query)
+        if len(queries) >= max_queries:
+            break
+    if not queries:
+        return {
+            "action": "finish",
+            "message": "ReAct planner 没有提出新的有效 query，结束检索",
+            "observation": str(data.get("observation") or "").strip(),
+            "rationale": str(data.get("rationale") or "").strip(),
+            "queries": [],
+        }
+    return {
+        "action": "search",
+        "message": "ReAct planner 决定继续调用检索工具",
+        "observation": str(data.get("observation") or "").strip(),
+        "rationale": str(data.get("rationale") or "").strip(),
+        "queries": queries,
+    }
+
+
+def _heuristic_agent_queries(
+    question: str,
+    *,
+    previous_queries: list[str],
+    max_queries: int,
+) -> list[str]:
+    """Build deterministic follow-up searches when LLM planning is disabled."""
+    tokens = _significant_tokens(question)
+    prefix = " ".join(tokens[:4])
+    base = prefix or question
+    templates = []
+    if _is_method_or_experiment_question(question):
+        templates.extend(
+            [
+                "{base} method framework modules architecture pipeline",
+                "{base} algorithm components implementation details",
+            ]
+        )
+    if _is_experiment_question(question):
+        templates.extend(
+            [
+                "{base} datasets experiments evaluation metrics results",
+                "{base} benchmark comparison ablation quantitative qualitative",
+            ]
+        )
+    templates.extend(
+        [
+            "{base} paper summary contributions conclusions",
+            "{base} limitations discussion findings",
+        ]
+    )
+    queries = []
+    for template in templates:
+        query = template.format(base=base).strip()
+        if not query or _seen_query(query, [*previous_queries, *queries]):
+            continue
+        queries.append(query)
+        if len(queries) >= max_queries:
+            break
+    return queries
+
+
+def _summarize_agent_evidence(evidence: list[RetrievalHit], *, limit: int = 8) -> str:
+    """Build a compact evidence view for the agent policy prompt."""
+    if not evidence:
+        return "(none yet)"
+    lines = []
+    for idx, hit in enumerate(sorted(evidence, key=lambda item: item.score, reverse=True)[:limit], start=1):
+        chunk = hit.chunk
+        lines.append(
+            f"[{idx}] title={chunk.paper_title}; modality={chunk.modality}; "
+            f"pages={_page_label(chunk.page_start, chunk.page_end)}; "
+            f"section={chunk.section_title or 'unknown'}; "
+            f"score={hit.score:.4f}; text={_quote(chunk.content, limit=260)}"
+        )
+    return "\n".join(lines)
+
+
+def _seen_query(query: str, previous_queries: list[str]) -> bool:
+    normalized = _normalize_query(query)
+    return any(_normalize_query(existing) == normalized for existing in previous_queries)
+
+
+def _normalize_query(query: str) -> str:
+    return re.sub(r"\s+", " ", query.strip().lower())
 
 
 def _load_figure_images(chunks: list[RAGChunk]) -> tuple[list, list[str], list[int]] | None:

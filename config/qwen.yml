@@ -34,9 +34,18 @@ llm:
   target_lang: Simplified Chinese
   base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
   model: qwen3.5-flash
+  timeout: 90
+  max_retries: 1
 
 rag:
   models_dir: models
+  default_mode: standard
+  decompose_enabled: true
+  agent_enabled: true
+  agent_max_steps: 4
+  agent_queries_per_step: 2
+  agent_evidence_cap: 16
+  agent_planner_enabled: true
   multimodal_enabled: true
   vl_caption_enabled: true
   vl_caption_model: Qwen/Qwen3-VL-8B-Instruct

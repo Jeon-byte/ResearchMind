@@ -29,6 +29,10 @@ class RAGConfig:
     default_mode: str
     decompose_enabled: bool
     agent_enabled: bool
+    agent_max_steps: int
+    agent_queries_per_step: int
+    agent_evidence_cap: int
+    agent_planner_enabled: bool
     multimodal_enabled: bool
     vl_caption_enabled: bool
     vl_caption_model: str
@@ -71,6 +75,13 @@ def load_rag(raw: Mapping[str, Any]) -> RAGConfig:
         default_mode=expect_str(section.get("default_mode", "standard"), "rag.default_mode").strip().lower(),
         decompose_enabled=expect_bool(section.get("decompose_enabled", True), "rag.decompose_enabled"),
         agent_enabled=expect_bool(section.get("agent_enabled", False), "rag.agent_enabled"),
+        agent_max_steps=expect_int(section.get("agent_max_steps", 3), "rag.agent_max_steps"),
+        agent_queries_per_step=expect_int(section.get("agent_queries_per_step", 2), "rag.agent_queries_per_step"),
+        agent_evidence_cap=expect_int(section.get("agent_evidence_cap", 16), "rag.agent_evidence_cap"),
+        agent_planner_enabled=expect_bool(
+            section.get("agent_planner_enabled", False),
+            "rag.agent_planner_enabled",
+        ),
         multimodal_enabled=expect_bool(section.get("multimodal_enabled", False), "rag.multimodal_enabled"),
         vl_caption_enabled=expect_bool(section.get("vl_caption_enabled", False), "rag.vl_caption_enabled"),
         vl_caption_model=expect_str(
@@ -131,6 +142,12 @@ def check_rag(config: RAGConfig) -> None:
         raise ValueError("rag.vector_weight and rag.fts_weight cannot both be 0")
     if config.default_mode not in {"standard", "decompose", "agent"}:
         raise ValueError("rag.default_mode must be standard, decompose, or agent")
+    if config.agent_max_steps <= 0:
+        raise ValueError("rag.agent_max_steps must be positive")
+    if config.agent_queries_per_step <= 0:
+        raise ValueError("rag.agent_queries_per_step must be positive")
+    if config.agent_evidence_cap <= 0:
+        raise ValueError("rag.agent_evidence_cap must be positive")
     if config.vl_caption_max_figures_per_paper == 0 or config.vl_caption_max_figures_per_paper < -1:
         raise ValueError("rag.vl_caption_max_figures_per_paper must be -1 or a positive integer")
     if config.vl_caption_max_new_tokens <= 0:

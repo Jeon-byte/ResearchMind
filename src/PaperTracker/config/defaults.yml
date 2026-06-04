@@ -122,6 +122,13 @@ rag:
   default_mode: standard
   decompose_enabled: true
   agent_enabled: false
+  # Agentic search v1: iterative LLM-guided retrieval. It first retrieves with
+  # the original question, then asks the LLM what evidence is missing and runs
+  # targeted follow-up searches before final rerank.
+  agent_max_steps: 3
+  agent_queries_per_step: 2
+  agent_evidence_cap: 16
+  agent_planner_enabled: false
   multimodal_enabled: true
   # Optional visually grounded figure captioning.
   # When enabled, ingestion uses Qwen3-VL-8B-Instruct, optionally with a LoRA
